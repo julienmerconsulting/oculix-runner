@@ -1,0 +1,105 @@
+# =============================================================================
+#  OculiX Mainframe Lab
+#
+#  Deux cibles mainframe isolees :
+#
+#  1. target-mainframe
+#       TK5 original
+#       Windows : 3270 / 5900 / 6080
+#
+#  2. target-mainframe-kicks
+#       TK5 dedie a KICKS
+#       Windows : 3271 / 5901 / 6081
+#
+#  Le runner OculiX reste actuellement connecte au target-mainframe original.
+# =============================================================================
+
+services:
+
+  # ===========================================================================
+  # TK5 ORIGINAL
+  # ===========================================================================
+
+  target-mainframe:
+    build: ./target-mainframe
+    container_name: target-mainframe
+    hostname: target-mainframe
+
+    ports:
+      - "3270:3270"
+      - "5900:5900"
+      - "6080:6080"
+
+    networks:
+      - lab-net
+
+    restart: unless-stopped
+
+    mem_limit: 1g
+    cpus: 1.0
+
+
+  # ===========================================================================
+  # TK5 + KICKS
+  # ===========================================================================
+
+  target-mainframe-kicks:
+    build: ./target-mainframe-kicks
+    container_name: target-mainframe-kicks
+    hostname: target-mainframe-kicks
+
+    ports:
+      - "3271:3270"
+      - "5901:5900"
+      - "6081:6080"
+      - "8039:8038"
+
+    networks:
+      - lab-net
+
+    restart: unless-stopped
+
+    mem_limit: 1g
+    cpus: 1.0
+
+
+  # ===========================================================================
+  # OCULIX RUNNER
+  # ===========================================================================
+
+  oculix-runner:
+    build: ./oculix-runner
+    container_name: oculix-runner
+    hostname: oculix-runner
+
+    depends_on:
+      target-mainframe:
+        condition: service_healthy
+
+    environment:
+      TARGET_VNC_HOST: target-mainframe
+      TARGET_VNC_PORT: "5900"
+      RUNNER_WS_PORT: "8765"
+
+    ports:
+      - "8765:8765"
+
+    networks:
+      - lab-net
+
+    restart: unless-stopped
+
+    mem_limit: 2g
+    cpus: 2.0
+
+    stdin_open: true
+    tty: true
+
+
+# =============================================================================
+# RESEAU INTERNE
+# =============================================================================
+
+networks:
+  lab-net:
+    driver: bridge
