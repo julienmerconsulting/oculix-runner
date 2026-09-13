@@ -1,5 +1,7 @@
 package org.oculix.runner;
 
+import org.oculix.runner.tools.Recorder;
+import org.oculix.runner.tools.SideBySide;
 import org.sikuli.basics.Debug;
 import org.sikuli.ide.Sikulix;
 import org.sikuli.support.Commons;
@@ -18,6 +20,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -194,6 +197,8 @@ public final class Engine {
     Files.writeString(dir.resolve("run_" + runId + ".py"),
         header.replace("__RUN_JSON__", runJson.toString()) + script);
 
+    Recorder recorder = maybeStartRecorder(run, runId);
+
     Capture capture = new Capture(runId);
     PrintStream cap = new PrintStream(capture, true, StandardCharsets.UTF_8);
     IRunner.Options options = new IRunner.Options();
@@ -235,7 +240,68 @@ public final class Engine {
         status, rc, error, errorLine(options) > 0 ? errorLine(options) : null, Db.now(), durationMs, runId);
     realOut.printf("[runner] run %d %s in %d ms (%d lines, %d steps)%n", runId, status, durationMs, capture.seq, capture.stepOrder);
 
+    if (recorder != null) finishRecording(runId, recorder, String.valueOf(run.get("name")));
     if (suiteRunId != null) settleSuite(suiteRunId, runId, status, ((Number) run.get("continue_on_failure")).intValue() != 0);
+  }
+
+  // ---------------------------------------------------------------- recording (experimental)
+
+  /** A recording in progress or just finished, for the live route. */
+  public record Recording(Recorder recorder, String title, long startedMs) { }
+
+  private final Map<Long, Recording> recordings = new java.util.concurrent.ConcurrentHashMap<>();
+
+  public Recording recording(long runId) {
+    return recordings.get(runId);
+  }
+
+  /** RUNNER_RECORD=1, or params {"record": true}, and a VNC target: start a Recorder. */
+  private Recorder maybeStartRecorder(Map<String, Object> run, long runId) {
+    try {
+      boolean enabled = "1".equals(System.getenv("RUNNER_RECORD"));
+      if (!enabled && run.get("params_json") != null) {
+        enabled = Json.bool(Json.parse(String.valueOf(run.get("params_json"))), "record", false);
+      }
+      if (!enabled || run.get("target_id") == null) return null;
+      Map<String, Object> t = db.one("SELECT kind, host, port FROM targets WHERE id=?", run.get("target_id"));
+      if (t == null || !"vnc".equals(t.get("kind")) || t.get("host") == null) return null;
+      Path frames = artifactPath(runId, "script.py").getParent().resolve("frames");
+      Recorder recorder = new Recorder(String.valueOf(t.get("host")), ((Number) t.get("port")).intValue(), frames, 250);
+      recorder.start();
+      recordings.put(runId, new Recording(recorder, String.valueOf(run.get("name")), System.currentTimeMillis()));
+      event("record.start", "run " + runId + " -> " + t.get("host") + ":" + t.get("port"));
+      return recorder;
+    } catch (Exception e) {
+      event("record.failed", "run " + runId + ": " + e);
+      return null;
+    }
+  }
+
+  /** Stops the recorder, then assembles the video off the worker thread. */
+  private void finishRecording(long runId, Recorder recorder, String title) {
+    List<Recorder.Frame> frames = recorder.stopAndJoin();
+    if (recorder.failure() != null) {
+      recordings.remove(runId);
+      event("record.failed", "run " + runId + ": " + recorder.failure());
+      return;
+    }
+    Thread t = new Thread(() -> {
+      try {
+        Path out = recorder.dir().getParent().resolve("sidebyside.mp4");
+        long t0 = System.nanoTime();
+        int written = SideBySide.render(db, runId, title, frames, out, 4);
+        db.insert("INSERT INTO artifacts(run_id, kind, filename, path, content_type, size, sha256, created_at) VALUES (?,?,?,?,?,?,?,?)",
+            runId, "video", out.getFileName().toString(), out.toString(), "video/mp4", Files.size(out), sha256(out), Db.now());
+        for (Recorder.Frame f : frames) Files.deleteIfExists(f.file());
+        event("record.done", String.format("run %d: %d captures -> %d video frames, %.1fs, %s", runId, frames.size(), written, (System.nanoTime() - t0) / 1e9, out));
+      } catch (Throwable e) {
+        event("record.failed", "run " + runId + ": " + e);
+      } finally {
+        recordings.remove(runId);
+      }
+    }, "oculix-render-" + runId);
+    t.setDaemon(true);
+    t.start();
   }
 
   private void settleSuite(long suiteRunId, long runId, String status, boolean continueOnFailure) throws SQLException {
