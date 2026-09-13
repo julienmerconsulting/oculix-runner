@@ -1,32 +1,68 @@
 # =============================================================================
-#  oculix-runner : execute des scripts Sikuli/Python contre une cible VNC
+#  oculix-runner : JVM OculiX chaude derriere une API HTTP, base SQLite
 # -----------------------------------------------------------------------------
-#  Image autonome qui contient :
-#    - JRE 17 (pour OculiX/SikuliX)
-#    - OculiX jar (telecharge depuis github.com/oculix-org/SikuliX1)
-#    - Jython 2.7 (interpreteur Python embarque dans Sikuli)
-#    - PaddleOCR (pour la reconnaissance de texte sur le mainframe)
-#    - Python 3 + websockets (serveur de commandes/logs)
-#  Pas besoin de display X local : OculiX se connecte au VNC du target par TCP.
+#  Trois etapes :
+#    1. oculix  : le jar OculiX, soit depose dans jars/oculix.jar, soit telecharge
+#                 depuis la release GitHub (SHA-256 verifie)
+#    2. build   : compilation du service (Maven) contre ce jar
+#    3. runtime : JRE 17 + Xvfb + les deux jars + le service au demarrage
+#
+#  Le jar OculiX est la brique de tout : le service ne fait que le charger une
+#  fois et lui passer des scripts. Rien n'est modifie dans OculiX.
+#
+#  Xvfb : l'initialisation AWT d'OculiX exige un affichage, meme quand le
+#  script ne pilote qu'un ecran VNC distant (Sikuli.py initialise l'ecran
+#  primaire a l'import). Un seul Xvfb pour toute la vie du service.
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# 1. Le jar OculiX
+#    Pour utiliser un autre jar (build local, release candidate) : le copier
+#    dans jars/oculix.jar avant le build, il prend le pas sur le telechargement.
+# -----------------------------------------------------------------------------
+FROM alpine:3.20 AS oculix
+ARG OCULIX_VERSION=4.0.0
+ARG OCULIX_SHA256=95bd353ddd92af9779845c83c36646bc5e5ca5e767196818615444c02d49533d
+RUN apk add --no-cache curl
+COPY jars/ /jars/
+RUN if [ -f /jars/oculix.jar ]; then \
+      echo "OculiX: jar local jars/oculix.jar"; \
+    else \
+      echo "OculiX: telechargement de la release ${OCULIX_VERSION}"; \
+      curl -fL --retry 3 \
+        "https://github.com/oculix-org/Oculix/releases/download/v${OCULIX_VERSION}/oculixide-${OCULIX_VERSION}-linux.jar" \
+        -o /jars/oculix.jar \
+      && printf '%s  %s\n' "$OCULIX_SHA256" /jars/oculix.jar | sha256sum -c -; \
+    fi
+
+# -----------------------------------------------------------------------------
+# 2. Le service
+# -----------------------------------------------------------------------------
+FROM maven:3.9-eclipse-temurin-17 AS build
+WORKDIR /build
+COPY --from=oculix /jars/oculix.jar /opt/oculix/oculix.jar
+COPY service/pom.xml ./
+RUN mvn -q -B -Doculix.jar=/opt/oculix/oculix.jar dependency:go-offline
+COPY service/src ./src
+RUN mvn -q -B -Doculix.jar=/opt/oculix/oculix.jar package
+
+# -----------------------------------------------------------------------------
+# 3. L'image finale
+# -----------------------------------------------------------------------------
 FROM eclipse-temurin:17-jre-jammy
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     OCULIX_HOME=/opt/oculix \
-    PYTHONUNBUFFERED=1
+    OCULIX_JAR=/opt/oculix/oculix.jar \
+    RUNNER_HTTP_PORT=8765 \
+    RUNNER_DATA_DIR=/workdir \
+    RUNNER_DEBUG_LEVEL=3
 
-# -----------------------------------------------------------------------------
-# Dependances systeme : Python, libs OpenCV, outils reseau
-# -----------------------------------------------------------------------------
+# Xvfb et les libs X que les natives d'OculiX (OpenCV, Tesseract, AWT) attendent
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        python3 \
-        python3-pip \
-        python3-venv \
-        wget \
         curl \
         ca-certificates \
-        net-tools \
         libgl1 \
         libglib2.0-0 \
         libsm6 \
@@ -34,49 +70,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxrender1 \
         libfreetype6 \
         fontconfig \
+        xvfb \
+        xauth \
+        libxtst6 \
+        libxi6 \
     && rm -rf /var/lib/apt/lists/*
 
-# -----------------------------------------------------------------------------
-# Installation de OculiX
-# A remplacer par l'URL officielle du release oculix-org/SikuliX1 quand publie.
-# Pour le moment on prend SikuliX 2.0.5 comme placeholder.
-# -----------------------------------------------------------------------------
-WORKDIR /opt/oculix
-RUN wget -q https://launchpad.net/sikuli/sikulix/2.0.5/+download/sikulixide-2.0.5.jar \
-         -O oculix.jar
-# Quand le release officiel est pret, remplacer par :
-# RUN wget -q https://github.com/oculix-org/SikuliX1/releases/download/vX.Y.Z/oculix-X.Y.Z.jar -O oculix.jar
-
-# -----------------------------------------------------------------------------
-# Installation Python : websockets pour le serveur, paddleocr pour l'OCR
-# (PaddleOCR est lourd ~300Mo de modeles, telecharges au premier run)
-# -----------------------------------------------------------------------------
-RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-RUN pip install --no-cache-dir \
-        websockets==12.0 \
-        paddleocr==3.3.0 \
-        paddlepaddle==2.6.2 \
-        opencv-python-headless==4.10.0.84 \
-        Pillow==10.2.0 \
-        vncdotool==1.2.0
-
-# -----------------------------------------------------------------------------
-# Serveur de commandes : recoit des scripts via WebSocket, les execute,
-# stream les logs en retour. Pour l'instant minimal : on l'enrichira plus tard.
-# -----------------------------------------------------------------------------
-COPY runner_server.py /opt/oculix/runner_server.py
+COPY --from=oculix /jars/oculix.jar /opt/oculix/oculix.jar
+COPY --from=build /build/target/oculix-runner-service.jar /opt/oculix/oculix-runner-service.jar
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh && mkdir -p /workdir
 
-# Repertoire de travail pour les scripts envoyes par l'utilisateur
-RUN mkdir -p /tmp/scripts
-
-# Variables d'environnement par defaut : cible VNC
-ENV TARGET_VNC_HOST=target-mainframe \
-    TARGET_VNC_PORT=5900 \
-    RUNNER_WS_PORT=8765
-
+# Base SQLite, scripts et artefacts des runs : a monter sur un volume
+VOLUME /workdir
 EXPOSE 8765
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=90s --retries=3 \
+    CMD curl -fs "http://localhost:${RUNNER_HTTP_PORT}/health" | grep -q '"engine":"ready"' || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
