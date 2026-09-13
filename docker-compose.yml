@@ -33,7 +33,9 @@ services:
     networks:
       - lab-net
 
-    restart: unless-stopped
+    # Pas de relance automatique : quand la VM WSL tombe, tout repartait d'un coup
+    # (deux Hercules + le runner) et la refaisait tomber. On relance a la main.
+    restart: "no"
 
     mem_limit: 1g
     cpus: 1.0
@@ -59,7 +61,9 @@ services:
     networks:
       - lab-net
 
-    restart: unless-stopped
+    # Pas de relance automatique : quand la VM WSL tombe, tout repartait d'un coup
+    # (deux Hercules + le runner) et la refaisait tomber. On relance a la main.
+    restart: "no"
 
     mem_limit: 1g
     cpus: 1.0
@@ -93,7 +97,9 @@ services:
     networks:
       - lab-net
 
-    restart: unless-stopped
+    # Pas de relance automatique : quand la VM WSL tombe, tout repartait d'un coup
+    # (deux Hercules + le runner) et la refaisait tomber. On relance a la main.
+    restart: "no"
 
     mem_limit: 2g
     cpus: 2.0
