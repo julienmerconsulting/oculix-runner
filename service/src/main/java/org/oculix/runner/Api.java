@@ -2,6 +2,7 @@ package org.oculix.runner;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.sun.net.httpserver.HttpExchange;
+import org.oculix.runner.tools.SideBySide;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -76,6 +77,8 @@ public final class Api {
     http.route("GET", "/runs/{id}/steps", "read", r -> db.query("SELECT * FROM run_steps WHERE run_id=? ORDER BY step_order", r.id("id")));
     http.route("GET", "/runs/{id}/artifacts", "read", r -> db.query("SELECT id, run_id, kind, filename, content_type, size, sha256, created_at FROM artifacts WHERE run_id=? ORDER BY id", r.id("id")));
     http.route("POST", "/runs/{id}/abort", "run", this::abortRun);
+    // Experimental: live "log + screen" MJPEG while a recorded run executes (open in a browser with ?key=).
+    http.route("GET", "/runs/{id}/live", "read", this::runLive);
     http.route("GET", "/artifacts/{id}", "read", this::downloadArtifact);
 
     http.route("POST", "/keys", "admin", this::createKey);
@@ -470,6 +473,40 @@ public final class Api {
         out.flush();
         if (lines.isEmpty()) Thread.sleep(300);
       }
+    }
+    return Http.HANDLED;
+  }
+
+  /** MJPEG stream of the side-by-side picture, four times a second, until the recorded run ends. */
+  private Object runLive(Http.Req r) throws Exception {
+    long id = r.id("id");
+    must(db.one("SELECT id FROM runs WHERE id=?", id), "run");
+    Engine.Recording rec = engine.recording(id);
+    if (rec == null) throw new Http.ApiError(404, "no live recording for run " + id + " (RUNNER_RECORD=1 or params.record=true, VNC target)");
+    HttpExchange ex = r.exchange;
+    ex.getResponseHeaders().set("Content-Type", "multipart/x-mixed-replace; boundary=frame");
+    ex.getResponseHeaders().set("Cache-Control", "no-cache");
+    ex.sendResponseHeaders(200, 0);
+    java.awt.image.BufferedImage canvas = null;
+    try (OutputStream out = ex.getResponseBody()) {
+      while (true) {
+        java.awt.image.BufferedImage screen = rec.recorder().latest();
+        if (canvas == null) canvas = SideBySide.canvasFor(screen == null ? 1024 : screen.getWidth(), screen == null ? 768 : screen.getHeight());
+        Map<String, Object> run = db.one("SELECT started_at, ended_at, status FROM runs WHERE id=?", id);
+        long started = run.get("started_at") == null ? rec.startedMs() : java.time.Instant.parse(String.valueOf(run.get("started_at"))).toEpochMilli();
+        Long ended = run.get("ended_at") == null ? null : java.time.Instant.parse(String.valueOf(run.get("ended_at"))).toEpochMilli();
+        SideBySide.compose(canvas, SideBySide.lines(db, id), screen, System.currentTimeMillis(), started, ended, String.valueOf(run.get("status")), rec.title());
+        java.io.ByteArrayOutputStream jpg = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(canvas, "jpeg", jpg);
+        out.write(("--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " + jpg.size() + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+        out.write(jpg.toByteArray());
+        out.write("\r\n".getBytes(StandardCharsets.US_ASCII));
+        out.flush();
+        if (ended != null && rec.recorder().stopped()) break;
+        Thread.sleep(250);
+      }
+    } catch (IOException viewerLeft) {
+      // the browser closed the tab
     }
     return Http.HANDLED;
   }

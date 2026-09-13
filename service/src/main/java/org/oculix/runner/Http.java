@@ -128,7 +128,12 @@ public final class Http {
         Map<String, String> params = new LinkedHashMap<>();
         for (int i = 0; i < r.names().size(); i++) params.put(r.names().get(i), m.group(i + 1));
         Req req = new Req(ex, params, parseQuery(ex.getRequestURI().getRawQuery()));
-        if (r.scope() != null) req.key = auth.require(ex.getRequestHeaders().getFirst("X-Api-Key"), r.scope());
+        if (r.scope() != null) {
+          // Header first; ?key= as a fallback for things a browser opens directly (the live MJPEG view).
+          String key = ex.getRequestHeaders().getFirst("X-Api-Key");
+          if (key == null) key = req.query.get("key");
+          req.key = auth.require(key, r.scope());
+        }
         Object result = r.handler().handle(req);
         if (result == HANDLED) return;
         if (result instanceof Raw raw) {
