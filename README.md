@@ -169,6 +169,15 @@ erDiagram
     runs ||--o{ artifacts : keeps
 ```
 
+## 🎬 Video recording (experimental)
+
+`RUNNER_RECORD=1` on the service, or `"params": {"record": true}` on a run whose target is VNC:
+the service opens its own VNC session to the target during the run, captures the screen four
+times a second, then assembles a `sidebyside.mp4` at the end, log on the left, screen on the
+right, same clock. It shows up in `GET /runs/{id}/artifacts`. While the run executes,
+`GET /runs/{id}/live?key=…` streams the same picture as MJPEG, which any browser displays.
+No other route: it is a switch, not an API feature.
+
 ## ⚙️ Environment variables
 
 | Variable | Default | Role |
@@ -179,6 +188,7 @@ erDiagram
 | `RUNNER_DEBUG_LEVEL` | `3` | OculiX debug level |
 | `RUNNER_DEFAULT_TIMEOUT_MS` | `0` | default run timeout, 0 = none |
 | `RUNNER_BOOTSTRAP_KEY` | generated | admin key of the first start |
+| `RUNNER_RECORD` | `0` | `1` = side-by-side video for every run with a VNC target (experimental) |
 | `JAVA_OPTS` | empty | JVM options |
 
 ## ☕ The OculiX jar
