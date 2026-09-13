@@ -44,7 +44,9 @@ services:
   # ===========================================================================
 
   target-mainframe-kicks:
-    build: ./target-mainframe-kicks
+    # TK5 + KICKS 1.5.0 deja installe (voir lab/KICKS.md). Pour reconstruire un TK5 nu
+    # et refaire l'installation soi-meme : remplacer image: par build: ./target-mainframe-kicks
+    image: ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
     container_name: target-mainframe-kicks
     hostname: target-mainframe-kicks
 
@@ -72,17 +74,21 @@ services:
     container_name: oculix-runner
     hostname: oculix-runner
 
-    depends_on:
-      target-mainframe:
-        condition: service_healthy
-
+    # Le runner ne depend plus d'une cible : les cibles VNC sont des lignes de
+    # sa base (POST /projects/{id}/targets), il demarre seul.
     environment:
-      TARGET_VNC_HOST: target-mainframe
-      TARGET_VNC_PORT: "5900"
-      RUNNER_WS_PORT: "8765"
+      RUNNER_HTTP_PORT: "8765"
+      RUNNER_DEBUG_LEVEL: "3"
+      # Cle admin fixee au premier demarrage (sinon generee et affichee une fois dans les logs)
+      RUNNER_BOOTSTRAP_KEY: ${RUNNER_BOOTSTRAP_KEY:-}
+      # Mots de passe VNC : jamais en base, references par nom depuis targets.secret_ref
+      # TK5_VNC_PASSWORD: ${TK5_VNC_PASSWORD:-}
 
     ports:
       - "8765:8765"
+
+    volumes:
+      - runner-data:/workdir
 
     networks:
       - lab-net
@@ -92,9 +98,6 @@ services:
     mem_limit: 2g
     cpus: 2.0
 
-    stdin_open: true
-    tty: true
-
 
 # =============================================================================
 # RESEAU INTERNE
@@ -103,3 +106,7 @@ services:
 networks:
   lab-net:
     driver: bridge
+
+# Base SQLite, scripts et artefacts des runs : survivent a la recreation du conteneur
+volumes:
+  runner-data:
