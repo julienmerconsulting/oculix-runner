@@ -74,7 +74,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         xauth \
         libxtst6 \
         libxi6 \
+        ffmpeg \
+        fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+# ffmpeg et une police : enregistrement video experimental (RUNNER_RECORD=1),
+# log a gauche, ecran VNC a droite, assemble a la fin du run.
 
 COPY --from=oculix /jars/oculix.jar /opt/oculix/oculix.jar
 COPY --from=build /build/target/oculix-runner-service.jar /opt/oculix/oculix-runner-service.jar
