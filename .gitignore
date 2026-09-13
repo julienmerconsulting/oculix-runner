@@ -1,0 +1,8 @@
+# Maven build output of the runner service
+service/target/
+
+# Un jar OculiX depose ici prend le pas sur le telechargement (voir Dockerfile)
+jars/*.jar
+
+# local scratch
+*.log
