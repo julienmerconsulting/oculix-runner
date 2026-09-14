@@ -1,53 +1,23 @@
 # =============================================================================
 #  OculiX Mainframe Lab
 #
-#  Deux cibles mainframe isolees :
+#  One mainframe target, TK5 (MVS 3.8j under Hercules) with KICKS 1.5.0
+#  installed, pulled from GHCR: host ports 3271 / 5901 / 6081 / 8039.
+#  A bare TK5 without KICKS is the same machine minus one program; it is not
+#  needed here.
 #
-#  1. target-mainframe
-#       TK5 original
-#       Windows : 3270 / 5900 / 6080
-#
-#  2. target-mainframe-kicks
-#       TK5 dedie a KICKS
-#       Windows : 3271 / 5901 / 6081
-#
-#  Le runner OculiX reste actuellement connecte au target-mainframe original.
+#  And the OculiX runner: HTTP API + SQLite on a warm OculiX JVM, port 8765.
 # =============================================================================
 
 services:
-
-  # ===========================================================================
-  # TK5 ORIGINAL
-  # ===========================================================================
-
-  target-mainframe:
-    build: ./target-mainframe
-    container_name: target-mainframe
-    hostname: target-mainframe
-
-    ports:
-      - "3270:3270"
-      - "5900:5900"
-      - "6080:6080"
-
-    networks:
-      - lab-net
-
-    # Pas de relance automatique : quand la VM WSL tombe, tout repartait d'un coup
-    # (deux Hercules + le runner) et la refaisait tomber. On relance a la main.
-    restart: "no"
-
-    mem_limit: 1g
-    cpus: 1.0
-
 
   # ===========================================================================
   # TK5 + KICKS
   # ===========================================================================
 
   target-mainframe-kicks:
-    # TK5 + KICKS 1.5.0 deja installe (voir lab/KICKS.md). Pour reconstruire un TK5 nu
-    # et refaire l'installation soi-meme : remplacer image: par build: ./target-mainframe-kicks
+    # TK5 + KICKS 1.5.0 already installed (see lab/KICKS.md). To rebuild a bare
+    # TK5 and redo the installation yourself, follow the guide in lab/.
     image: ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
     container_name: target-mainframe-kicks
     hostname: target-mainframe-kicks
@@ -61,8 +31,8 @@ services:
     networks:
       - lab-net
 
-    # Pas de relance automatique : quand la VM WSL tombe, tout repartait d'un coup
-    # (deux Hercules + le runner) et la refaisait tomber. On relance a la main.
+    # No automatic restart: when the WSL VM went down, everything came back at
+    # once (Hercules + the runner) and brought it down again. Restart by hand.
     restart: "no"
 
     mem_limit: 1g
@@ -74,18 +44,19 @@ services:
   # ===========================================================================
 
   oculix-runner:
-    build: ./oculix-runner
+    # The Dockerfile is at the root of this repository.
+    build: .
     container_name: oculix-runner
     hostname: oculix-runner
 
-    # Le runner ne depend plus d'une cible : les cibles VNC sont des lignes de
-    # sa base (POST /projects/{id}/targets), il demarre seul.
+    # The runner does not depend on a target: VNC targets are rows of its base
+    # (POST /projects/{id}/targets), it starts on its own.
     environment:
       RUNNER_HTTP_PORT: "8765"
       RUNNER_DEBUG_LEVEL: "3"
-      # Cle admin fixee au premier demarrage (sinon generee et affichee une fois dans les logs)
+      # Admin key fixed at first start (otherwise generated and printed once in the logs)
       RUNNER_BOOTSTRAP_KEY: ${RUNNER_BOOTSTRAP_KEY:-}
-      # Mots de passe VNC : jamais en base, references par nom depuis targets.secret_ref
+      # VNC passwords: never in the base, referenced by name from targets.secret_ref
       # TK5_VNC_PASSWORD: ${TK5_VNC_PASSWORD:-}
 
     ports:
@@ -97,8 +68,8 @@ services:
     networks:
       - lab-net
 
-    # Pas de relance automatique : quand la VM WSL tombe, tout repartait d'un coup
-    # (deux Hercules + le runner) et la refaisait tomber. On relance a la main.
+    # No automatic restart: when the WSL VM went down, everything came back at
+    # once (Hercules + the runner) and brought it down again. Restart by hand.
     restart: "no"
 
     mem_limit: 2g
@@ -106,13 +77,13 @@ services:
 
 
 # =============================================================================
-# RESEAU INTERNE
+# INTERNAL NETWORK
 # =============================================================================
 
 networks:
   lab-net:
     driver: bridge
 
-# Base SQLite, scripts et artefacts des runs : survivent a la recreation du conteneur
+# SQLite base, scripts and artifacts of the runs: survive a container recreation
 volumes:
   runner-data:
