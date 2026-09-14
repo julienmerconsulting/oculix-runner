@@ -5,16 +5,18 @@ targets, scripts, suites, runs, log lines, steps, artifacts, keys, audit. The Oc
 modified: the service loads it once and hands it Jython scripts. After the first run, a `print`
 script executes in 0.7 s instead of 15.
 
-The repository also holds the mainframe lab used as a target: TK5 (MVS 3.8j under Hercules) and
-TK5 + KICKS, see `lab/`.
+The repository also holds the mainframe target: TK5 (MVS 3.8j under Hercules) with KICKS 1.5.0,
+pulled as a public image, see `lab/`.
 
 ## Start
 
 ```
 docker compose build oculix-runner
-RUNNER_BOOTSTRAP_KEY=orx_my_key docker compose up -d oculix-runner
+RUNNER_BOOTSTRAP_KEY=orx_my_key docker compose up -d oculix-runner target-mainframe-kicks
 curl http://localhost:8765/health
 ```
+
+The mainframe takes about a minute to IPL; noVNC shows it at http://localhost:6081/vnc.html.
 
 Without `RUNNER_BOOTSTRAP_KEY`, an admin key is generated on first start and printed once in
 `docker compose logs oculix-runner`. Only its hash is stored.
@@ -31,7 +33,7 @@ B=http://localhost:8765
 curl -s -X POST -H "$K" -H 'Content-Type: application/json' \
   -d '{"code":"lab","name":"Mainframe lab"}' $B/projects
 curl -s -X POST -H "$K" -H 'Content-Type: application/json' \
-  -d '{"name":"tk5","host":"target-mainframe","port":5900,"stage":"INT"}' $B/projects/1/targets
+  -d '{"name":"tk5","host":"target-mainframe-kicks","port":5900,"stage":"INT"}' $B/projects/1/targets
 curl -s -X POST -H "$K" --data-binary @scripts/tk5-type.py \
   "$B/projects/1/scripts/raw?name=tk5-type"
 curl -s -X POST -H "$K" -H 'Content-Type: application/json' \
