@@ -1,31 +1,31 @@
 # oculix-runner
 
-Une JVM OculiX chaude derrière une API HTTP, avec une base SQLite qui trace tout : projets, cibles
-VNC, scripts, suites, runs, lignes de log, steps, artefacts, clés, audit. Le jar OculiX n'est pas
-modifié : le service le charge une fois et lui passe des scripts Jython. Après le premier run, un
-script `print` tourne en 0,7 s au lieu de 15.
+A warm OculiX JVM behind an HTTP API, with a SQLite base that records everything: projects, VNC
+targets, scripts, suites, runs, log lines, steps, artifacts, keys, audit. The OculiX jar is not
+modified: the service loads it once and hands it Jython scripts. After the first run, a `print`
+script executes in 0.7 s instead of 15.
 
-Le dépôt contient aussi le labo mainframe qui sert de cible : TK5 (MVS 3.8j sous Hercules) et
-TK5 + KICKS, voir `lab/`.
+The repository also holds the mainframe lab used as a target: TK5 (MVS 3.8j under Hercules) and
+TK5 + KICKS, see `lab/`.
 
-## Démarrer
+## Start
 
 ```
 docker compose build oculix-runner
-RUNNER_BOOTSTRAP_KEY=orx_ma_cle docker compose up -d oculix-runner
+RUNNER_BOOTSTRAP_KEY=orx_my_key docker compose up -d oculix-runner
 curl http://localhost:8765/health
 ```
 
-Sans `RUNNER_BOOTSTRAP_KEY`, une clé admin est générée au premier démarrage et affichée une seule
-fois dans `docker compose logs oculix-runner`. Seul son hash est en base.
+Without `RUNNER_BOOTSTRAP_KEY`, an admin key is generated on first start and printed once in
+`docker compose logs oculix-runner`. Only its hash is stored.
 
-Le moteur met 15 à 20 s à être prêt (`"engine":"ready"` dans `/health`). Les runs soumis avant
-attendent en file.
+The engine takes 15 to 20 s to be ready (`"engine":"ready"` in `/health`). Runs submitted before
+that wait in the queue.
 
-## Premier run
+## First run
 
 ```
-K='X-Api-Key: orx_ma_cle'
+K='X-Api-Key: orx_my_key'
 B=http://localhost:8765
 
 curl -s -X POST -H "$K" -H 'Content-Type: application/json' \
@@ -39,101 +39,119 @@ curl -s -X POST -H "$K" -H 'Content-Type: application/json' \
 curl -s -H "$K" $B/runs/1/log/stream
 ```
 
-Le dernier appel affiche le log en direct et se termine par `--- run 1 passed (14371 ms)`.
+The last call prints the log live and ends with `--- run 1 passed (14371 ms)`.
 
-## Écrire un script
+## Writing a script
 
-Un script est du Jython OculiX ordinaire. Le service place devant lui un en-tête
-(`service/src/main/resources/header.py`) qui fournit :
+A script is ordinary OculiX Jython. The service prepends a header
+(`service/src/main/resources/header.py`) that provides:
 
-- `RUN` : id, nom, paramètres et cible du run, lus dans `run.json`.
-- `PARAMS` : le dictionnaire passé dans `params` à la création du run.
-- `TARGET` : `host`, `port`, `display`, `secret_ref` de la cible, et `password` résolu depuis la
-  variable d'environnement nommée par `secret_ref`. `TARGET_VNC_HOST` et `TARGET_VNC_PORT` sont
-  aussi posés dans `os.environ` pour les scripts existants.
-- `step(label, status, detail)` : déclare une étape, statuts `START`, `PASS`, `FAIL`, `SKIP`,
-  `INFO`. Un `START` suivi d'un `PASS` ou `FAIL` de même label ferme l'étape.
+- `RUN`: id, name, parameters and target of the run, read from `run.json`.
+- `PARAMS`: the dictionary passed as `params` when the run was created.
+- `TARGET`: `host`, `port`, `display`, `secret_ref` of the target, plus `password` resolved from
+  the environment variable named by `secret_ref`. `TARGET_VNC_HOST` and `TARGET_VNC_PORT` are also
+  set in `os.environ` for existing scripts.
+- `step(label, status, detail)`: declares a step, statuses `START`, `PASS`, `FAIL`, `SKIP`,
+  `INFO`. A `START` followed by a `PASS` or `FAIL` with the same label closes the step.
 
-La connexion VNC reste dans le script : `VNCScreen.start(TARGET["host"], TARGET["port"], 10, 0)`.
-Les numéros de ligne d'erreur renvoyés par l'API sont ceux du script, en-tête déduit.
+The VNC connection stays in the script: `VNCScreen.start(TARGET["host"], TARGET["port"], 10, 0)`.
+Error line numbers returned by the API are those of the script, header excluded.
 
 ## API
 
-Tout demande `X-Api-Key` sauf `/health`. Portées : `read` (GET), `run` (scripts, suites, runs,
-abort), `admin` (projets, cibles, clés, audit). `admin` inclut `run`, `run` inclut `read`.
+Everything requires `X-Api-Key` except `/health`. Scopes: `read` (GET), `run` (scripts, suites,
+runs, abort), `admin` (projects, targets, keys, audit). `admin` includes `run`, `run` includes `read`.
 
-| Méthode et route | Portée | Rôle |
+| Method and route | Scope | Role |
 |---|---|---|
-| `GET /health` | aucune | état du moteur, run en cours, file |
-| `GET /version` | read | versions du service et d'OculiX, hash du jar |
-| `POST /projects`, `GET /projects`, `GET /projects/{id}` | admin / read | projets |
-| `POST /projects/{id}/targets`, `GET /projects/{id}/targets`, `GET /targets/{id}`, `PUT /targets/{id}` | admin / read | cibles VNC |
-| `GET /targets/{id}/check` | run | connexion TCP à la cible |
-| `POST /projects/{id}/scripts` (JSON `name`, `content`) | run | créer un script |
-| `POST /projects/{id}/scripts/raw?name=…&external_ref=…` (corps = le `.py`) | run | créer un script depuis un fichier |
-| `GET /projects/{id}/scripts`, `GET /scripts/{id}`, `GET /scripts/{id}/content` | read | lire |
-| `PUT /scripts/{id}` (JSON), `PUT /scripts/{id}/content` (corps = le `.py`) | run | nouvelle version |
-| `POST /projects/{id}/suites` (`name`, `items`), `PUT /suites/{id}/items`, `GET /suites/{id}` | run / read | suites ordonnées |
-| `POST /suites/{id}/run` | run | file tous les scripts de la suite |
-| `GET /suite-runs/{id}`, `GET /projects/{id}/suite-runs`, `POST /suite-runs/{id}/abort` | read / run | exécutions de suite |
-| `POST /runs` (`project_code` ou `project_id`, `script_id` ou `code`, `target_id`, `params`, `timeout_ms`) | run | un run |
-| `GET /runs?project_id=&status=&limit=`, `GET /runs/{id}` | read | runs et leurs steps |
-| `GET /runs/{id}/log?after=&wait=` | read | lignes de log, long-poll jusqu'à `wait` secondes |
-| `GET /runs/{id}/log/stream` | read | log en texte, en continu jusqu'à la fin du run |
-| `GET /runs/{id}/steps`, `GET /runs/{id}/artifacts`, `GET /artifacts/{id}` | read | steps et fichiers |
-| `POST /runs/{id}/abort` | run | retire de la file ou interrompt le run en cours |
-| `POST /keys` (`name`, `scopes`), `GET /keys`, `DELETE /keys/{id}` | admin | clés, la clé en clair n'est montrée qu'à la création |
-| `GET /audit`, `GET /engine/events` | admin / read | journal des actions, événements du moteur |
+| `GET /health` | none | engine state, current run, queue |
+| `GET /version` | read | service and OculiX versions, jar hash |
+| `POST /projects`, `GET /projects`, `GET /projects/{id}` | admin / read | projects |
+| `POST /projects/{id}/targets`, `GET /projects/{id}/targets`, `GET /targets/{id}`, `PUT /targets/{id}` | admin / read | VNC targets |
+| `GET /targets/{id}/check` | run | TCP connection to the target |
+| `POST /projects/{id}/scripts` (JSON `name`, `content`) | run | create a script |
+| `POST /projects/{id}/scripts/raw?name=…&external_ref=…` (body = the `.py`) | run | create a script from a file |
+| `GET /projects/{id}/scripts`, `GET /scripts/{id}`, `GET /scripts/{id}/content` | read | read |
+| `PUT /scripts/{id}` (JSON), `PUT /scripts/{id}/content` (body = the `.py`) | run | new version |
+| `POST /projects/{id}/suites` (`name`, `items`), `PUT /suites/{id}/items`, `GET /suites/{id}` | run / read | ordered suites |
+| `POST /suites/{id}/run` | run | queues every script of the suite |
+| `GET /suite-runs/{id}`, `GET /projects/{id}/suite-runs`, `POST /suite-runs/{id}/abort` | read / run | suite executions |
+| `POST /runs` (`project_code` or `project_id`, `script_id` or `code`, `target_id`, `params`, `timeout_ms`) | run | one run |
+| `GET /runs?project_id=&status=&limit=`, `GET /runs/{id}` | read | runs and their steps |
+| `GET /runs/{id}/log?after=&wait=` | read | log lines, long-poll up to `wait` seconds |
+| `GET /runs/{id}/log/stream` | read | plain-text log, streamed until the run ends |
+| `GET /runs/{id}/steps`, `GET /runs/{id}/artifacts`, `GET /artifacts/{id}` | read | steps and files |
+| `POST /runs/{id}/abort` | run | removes from the queue or interrupts the running script |
+| `POST /keys` (`name`, `scopes`), `GET /keys`, `DELETE /keys/{id}` | admin | keys; the clear key is shown only at creation |
+| `GET /audit`, `GET /engine/events` | admin / read | action journal, engine events |
 
-Statuts d'un run : `queued`, `running`, `passed`, `failed`, `timeout`, `aborted`, `error`,
-`skipped`. Un seul run tourne à la fois, les autres attendent en file dans l'ordre de création.
-Une suite s'arrête au premier échec sauf `continue_on_failure` sur l'item.
+Run statuses: `queued`, `running`, `passed`, `failed`, `timeout`, `aborted`, `error`, `skipped`.
+One run executes at a time; the others wait in creation order. A suite stops at the first failure
+unless the item has `continue_on_failure`.
 
-## Données
+## Data
 
-`/workdir` (volume `runner-data`) : `runner.db`, `runs/` (dossiers `.sikuli` composés),
-`artifacts/<projet>/<run>/` (le script exact de chaque run). Schéma dans
+`/workdir` (volume `runner-data`): `runner.db`, `runs/` (the composed `.sikuli` folders),
+`artifacts/<project>/<run>/` (the exact script of each run). Schema in
 `service/src/main/resources/schema.sql`.
 
-## Variables d'environnement
+## Environment variables
 
-| Variable | Défaut | Rôle |
+| Variable | Default | Role |
 |---|---|---|
-| `RUNNER_HTTP_PORT` | `8765` | port HTTP |
-| `RUNNER_DATA_DIR` | `/workdir` | base, runs, artefacts |
-| `OCULIX_JAR` | `/opt/oculix/oculix.jar` | le jar chargé |
-| `RUNNER_DEBUG_LEVEL` | `3` | niveau de debug OculiX |
-| `RUNNER_DEFAULT_TIMEOUT_MS` | `0` | timeout par défaut des runs, 0 = aucun |
-| `RUNNER_BOOTSTRAP_KEY` | générée | clé admin du premier démarrage |
-| `JAVA_OPTS` | vide | options JVM |
+| `RUNNER_HTTP_PORT` | `8765` | HTTP port |
+| `RUNNER_DATA_DIR` | `/workdir` | base, runs, artifacts |
+| `OCULIX_JAR` | `/opt/oculix/oculix.jar` | the jar loaded |
+| `RUNNER_DEBUG_LEVEL` | `3` | OculiX debug level |
+| `RUNNER_DEFAULT_TIMEOUT_MS` | `0` | default run timeout, 0 = none |
+| `RUNNER_BOOTSTRAP_KEY` | generated | admin key of the first start |
+| `JAVA_OPTS` | empty | JVM options |
 
-## Le jar OculiX
+## The OculiX jar
 
-Par défaut, le build télécharge la release `4.0.0` de `oculix-org/Oculix` et vérifie son SHA-256.
-Pour un autre jar (build local, release candidate), le copier dans `jars/oculix.jar` avant le
-build : il prend le pas sur le téléchargement. Le dossier est ignoré par git.
+By default the build downloads release `4.0.0` of `oculix-org/Oculix` and checks its SHA-256. For
+another jar (local build, release candidate), copy it to `jars/oculix.jar` before building: it
+takes precedence over the download. The folder is ignored by git.
 
-À savoir avec la `4.0.0` : deux corrections faites depuis ne sont pas dedans, le bug ZRLE de
-`tigervnc-java-oculix` 2.0.1 (#443) et `Key.ENTER` qui envoie un Linefeed sur x3270 au lieu
-d'Entrée. Le logon TSO du labo a été validé avec un jar construit depuis `chore/global-bug-fixes`,
-posé dans `jars/`. La release suivante d'OculiX les embarquera.
+About `4.0.0`: two fixes made since are not in it, the ZRLE bug of `tigervnc-java-oculix` 2.0.1
+(#443) and `Key.ENTER` sending a Linefeed to x3270 instead of Enter. The lab's TSO logon was
+validated with a jar built from `chore/global-bug-fixes`, placed in `jars/`. The next OculiX
+release will carry both.
 
-## Construire le service seul
+## Building the service alone
 
 ```
 cd service
-mvn -Doculix.jar=/chemin/vers/oculixide-4.0.0-linux.jar package
+mvn -Doculix.jar=/path/to/oculixide-4.0.0-linux.jar package
 ```
 
-Produit `target/oculix-runner-service.jar`. Lancement à la main :
+Produces `target/oculix-runner-service.jar`. Manual launch:
 
 ```
 xvfb-run -a -s "-screen 0 1280x1024x24" \
-  java -cp target/oculix-runner-service.jar:/chemin/vers/oculix.jar org.oculix.runner.Main
+  java -cp target/oculix-runner-service.jar:/path/to/oculix.jar org.oculix.runner.Main
 ```
 
-## Labo mainframe
+## Mainframe lab
 
-`lab/KICKS.md` : démarrer le TK5 avec KICKS depuis l'image publique, ou l'installer soi-même avec
-le guide PDF. `lab/snapshot.sh` : photo à date des conteneurs. `scripts/` : les scripts du labo,
-`tk5-type.py` (logon HERC01) et `oculix-check.py` (capture + OCR).
+`lab/KICKS.md`: start the TK5 with KICKS from the public image, or install it yourself with the
+guide. `lab/snapshot.sh`: dated snapshot of the containers. `scripts/`: the lab scripts,
+`tk5-type.py` (HERC01 logon) and `oculix-check.py` (capture + OCR).
+
+The installation guide, `lab/Guide_installation_KICKS_1.5.0_TK5_OculiX.pdf`, is in French: it is
+the author's working document and stays as written. Any AI translates it in a minute.
+
+## Credits and licenses
+
+- **OculiX**, MIT, [oculix-org/Oculix](https://github.com/oculix-org/Oculix): the jar the runner
+  loads.
+- **Hercules** SDL Hyperion, [SDL-Hercules-390](https://github.com/SDL-Hercules-390/hyperion):
+  the emulator inside the lab images.
+- **TK5**, the MVS 3.8j Turnkey system by Rob Prins, [prince-webdesign.nl](https://www.prince-webdesign.nl/tk5):
+  MVS 3.8j itself is in the public domain.
+- **KICKS for TSO 1.5.0**, © Michael Noel, [moshix/kicks](https://github.com/moshix/kicks). Its
+  license is inside the image, member `HERC01.KICKSSYS.V1R5M0.DOC(LICENSE)`. The image
+  `ghcr.io/julienmerconsulting/target-mainframe-kicks` redistributes the complete original package,
+  free of charge, as that license requires; the objects modified for TK5 (`VOLUMES(WORK01)` in
+  the load jobs) and the added `MYLOGON` are in source form, next to the originals. No KICKS
+  object is stored in this repository.
