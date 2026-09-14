@@ -3,7 +3,6 @@
 [![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-red.svg)](LICENSE)
 [![Java 17](https://img.shields.io/badge/Java-17-orange.svg)](service/pom.xml)
 [![OculiX 4.0.0](https://img.shields.io/badge/OculiX-4.0.0-6f42c1.svg)](https://github.com/oculix-org/Oculix)
-[![Demo target on GHCR](https://img.shields.io/badge/GHCR-target--mainframe--kicks-2088ff.svg)](https://github.com/julienmerconsulting/oculix-runner/pkgs/container/target-mainframe-kicks)
 
 A warm OculiX JVM behind an HTTP API, with a SQLite base that records everything: projects, VNC
 targets, scripts, suites, runs, log lines, steps, artifacts, keys, audit. The OculiX jar is not
