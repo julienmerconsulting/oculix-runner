@@ -165,6 +165,25 @@ Statuses: `queued`, `running`, `passed` (exit code 0), `failed` (exception or no
 `error_line` is the line in your script, `error` a one-line summary), `timeout`, `aborted`,
 `error` (the service itself failed), `skipped` (a previous run of the suite failed).
 
+```mermaid
+stateDiagram-v2
+    [*] --> queued: POST /runs
+    queued --> running: worker picks it
+    queued --> aborted: POST /runs/{id}/abort
+    queued --> skipped: earlier run of the suite failed
+    running --> passed: exit code 0
+    running --> failed: exception or exit code
+    running --> timeout: timeout_ms elapsed
+    running --> aborted: POST /runs/{id}/abort
+    running --> error: service failure
+    passed --> [*]
+    failed --> [*]
+    timeout --> [*]
+    aborted --> [*]
+    error --> [*]
+    skipped --> [*]
+```
+
 `oculix_version` and `jar_sha256` record which jar executed the run.
 
 `GET /runs?project_id=&status=&limit=` (read) lists runs, newest first, 50 by default.
