@@ -7,8 +7,9 @@ docker pull ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
 docker compose up -d target-mainframe-kicks
 ```
 
-Stop `target-mainframe` first: 1 GB and 1 CPU each. Host ports: 3271 (TN3270), 5901 (VNC),
-6081 (noVNC), 8039 (Hercules console). TSO account: HERC01 / CUL8TR.
+Host ports: 3271 (TN3270), 5901 (VNC), 6081 (noVNC), 8039 (Hercules console). Inside the compose
+network the runner reaches it as `target-mainframe-kicks:5900`. TSO account: HERC01 / CUL8TR.
+It takes about a minute to IPL; 1 GB and 1 CPU.
 
 KICKS starts by itself at HERC01's logon (`HERC01.CMDPROC(MYLOGON)` runs the `KICKS` CLIST).
 Then: Ctrl+C for CLEAR, `BTC0` for the TAC menu, `KSSF` to leave for ISPF, `LOGOFF` when done.
