@@ -1,0 +1,435 @@
+openapi: 3.0.3
+info:
+  title: oculix-runner
+  version: 0.1.0
+  description: |
+    HTTP API of oculix-runner: a warm OculiX JVM that executes Jython scripts against VNC targets,
+    with a SQLite base recording projects, targets, scripts, suites, runs, log lines, steps,
+    artifacts, keys and audit. See docs/API.md for the walkthrough with real responses.
+servers:
+  - url: http://localhost:8765
+security:
+  - apiKey: []
+components:
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: Scopes read < run < admin. Also accepted as ?key= on routes a browser opens.
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+    Project:
+      type: object
+      properties:
+        id: { type: integer }
+        code: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        created_at: { type: string, format: date-time }
+    Target:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        name: { type: string }
+        kind: { type: string, enum: [vnc, local] }
+        host: { type: string, nullable: true }
+        port: { type: integer, nullable: true }
+        display: { type: string, nullable: true }
+        stage: { type: string, nullable: true }
+        secret_ref: { type: string, nullable: true, description: Name of the env var holding the VNC password. }
+        status: { type: string }
+        last_check_at: { type: string, nullable: true }
+        last_check_result: { type: string, nullable: true }
+        created_at: { type: string }
+        updated_at: { type: string }
+    Script:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        name: { type: string }
+        external_ref: { type: string, nullable: true }
+        language: { type: string, example: jython }
+        sha256: { type: string }
+        version: { type: integer }
+        created_at: { type: string }
+        updated_at: { type: string }
+    Run:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        name: { type: string }
+        script_id: { type: integer, nullable: true }
+        script_sha256: { type: string }
+        target_id: { type: integer, nullable: true }
+        suite_run_id: { type: integer, nullable: true }
+        position: { type: integer, nullable: true }
+        continue_on_failure: { type: integer }
+        status: { type: string, enum: [queued, running, passed, failed, timeout, aborted, error, skipped] }
+        exit_code: { type: integer, nullable: true }
+        error_line: { type: integer, nullable: true, description: Line in the user's script. }
+        error: { type: string, nullable: true }
+        params_json: { type: string, nullable: true }
+        trigger: { type: string, enum: [api, suite] }
+        triggered_by: { type: string, description: Name of the key. }
+        oculix_version: { type: string, nullable: true }
+        jar_sha256: { type: string, nullable: true }
+        retry_of: { type: integer, nullable: true }
+        timeout_ms: { type: integer }
+        created_at: { type: string }
+        started_at: { type: string, nullable: true }
+        ended_at: { type: string, nullable: true }
+        duration_ms: { type: integer, nullable: true }
+        line_count: { type: integer }
+        steps: { type: array, items: { $ref: '#/components/schemas/Step' } }
+    LogLine:
+      type: object
+      properties:
+        seq: { type: integer }
+        at: { type: string, format: date-time }
+        line: { type: string }
+    Step:
+      type: object
+      properties:
+        id: { type: integer }
+        run_id: { type: integer }
+        step_order: { type: integer }
+        label: { type: string }
+        status: { type: string, description: START, PASS, FAIL, SKIP, INFO, INCOMPLETE }
+        detail: { type: string, nullable: true }
+        started_at: { type: string }
+        ended_at: { type: string, nullable: true }
+        artifact_id: { type: integer, nullable: true }
+    Artifact:
+      type: object
+      properties:
+        id: { type: integer }
+        run_id: { type: integer }
+        kind: { type: string, example: script }
+        filename: { type: string }
+        content_type: { type: string }
+        size: { type: integer }
+        sha256: { type: string }
+        created_at: { type: string }
+    SuiteItem:
+      type: object
+      properties:
+        script_id: { type: integer }
+        target_id: { type: integer, nullable: true }
+        params: { type: object, nullable: true }
+        continue_on_failure: { type: boolean, default: false }
+    Suite:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        status: { type: string }
+        items: { type: array, items: { type: object } }
+    SuiteRun:
+      type: object
+      properties:
+        id: { type: integer }
+        project_id: { type: integer }
+        suite_id: { type: integer }
+        status: { type: string, enum: [queued, running, passed, failed, aborted] }
+        trigger: { type: string }
+        commit_sha: { type: string, nullable: true }
+        branch: { type: string, nullable: true }
+        retry_of: { type: integer, nullable: true }
+        triggered_by: { type: string }
+        created_at: { type: string }
+        started_at: { type: string, nullable: true }
+        ended_at: { type: string, nullable: true }
+        runs: { type: array, items: { $ref: '#/components/schemas/Run' } }
+    Key:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        scopes: { type: string, example: "read,run" }
+        created_at: { type: string }
+        last_used_at: { type: string, nullable: true }
+        revoked_at: { type: string, nullable: true }
+  responses:
+    Unauthorized: { description: No or unknown key, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Forbidden: { description: Key lacks the scope, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Unknown id, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+paths:
+  /health:
+    get:
+      security: []
+      summary: Engine state, running run, queue length
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example: { status: ok, engine: ready, detail: "OculiX 4.0.0 ready in 13.3s", running_run_id: null, queued: 0 }
+  /version:
+    get:
+      summary: Service and OculiX versions, jar hash
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              example: { service: 0.1.0, oculix_version: 4.0.0, oculix_jar: /opt/oculix/oculix.jar, jar_sha256: a71de8a6…, java: 17.0.20, engine: ready }
+  /engine/events:
+    get:
+      summary: Engine events, newest first
+      parameters: [{ name: limit, in: query, schema: { type: integer, default: 50 } }]
+      responses: { '200': { description: OK } }
+  /projects:
+    get:
+      summary: List projects
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Project' } } } } } }
+    post:
+      summary: Create a project (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code, name]
+              properties:
+                code: { type: string, pattern: '^[A-Za-z0-9_-]{1,32}$' }
+                name: { type: string }
+                description: { type: string }
+      responses:
+        '200': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+        '409': { description: Code already exists }
+  /projects/{id}:
+    get:
+      summary: One project
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/NotFound' } }
+  /projects/{id}/targets:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get:
+      summary: Targets of a project
+      responses: { '200': { description: OK } }
+    post:
+      summary: Create a target (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [vnc, local], default: vnc }
+                host: { type: string }
+                port: { type: integer }
+                display: { type: string }
+                stage: { type: string }
+                secret_ref: { type: string }
+      responses: { '200': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Target' } } } }, '409': { description: Name already exists } }
+  /targets/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get: { summary: One target, responses: { '200': { description: OK } } }
+    put: { summary: Update a target (admin), responses: { '200': { description: OK } } }
+  /targets/{id}/check:
+    get:
+      summary: TCP connection to the target (run)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        '200':
+          description: OK
+          content: { application/json: { example: { target_id: 1, ok: true, result: "tcp connect ok in 62 ms" } } }
+  /projects/{id}/scripts:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get: { summary: Scripts of a project (metadata), responses: { '200': { description: OK } } }
+    post:
+      summary: Create a script from JSON (run)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, content]
+              properties: { name: { type: string }, content: { type: string }, external_ref: { type: string } }
+      responses: { '200': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Script' } } } }, '409': { description: Name already exists } }
+  /projects/{id}/scripts/raw:
+    post:
+      summary: Create a script from a raw .py body (run)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: name, in: query, required: true, schema: { type: string } }
+        - { name: external_ref, in: query, schema: { type: string } }
+      requestBody: { required: true, content: { text/x-python: { schema: { type: string } } } }
+      responses: { '200': { description: Created } }
+  /scripts/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get: { summary: Script metadata, responses: { '200': { description: OK } } }
+    put:
+      summary: New version from JSON (run)
+      requestBody: { content: { application/json: { schema: { type: object, properties: { name: { type: string }, content: { type: string }, external_ref: { type: string } } } } } }
+      responses: { '200': { description: OK } }
+  /scripts/{id}/content:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get: { summary: The script text, responses: { '200': { description: text/x-python } } }
+    put:
+      summary: New version from a raw .py body (run)
+      requestBody: { required: true, content: { text/x-python: { schema: { type: string } } } }
+      responses: { '200': { description: OK } }
+  /projects/{id}/suites:
+    parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+    get: { summary: Suites of a project, responses: { '200': { description: OK } } }
+    post:
+      summary: Create a suite (run)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                description: { type: string }
+                items: { type: array, items: { $ref: '#/components/schemas/SuiteItem' } }
+      responses: { '200': { description: Created, content: { application/json: { schema: { $ref: '#/components/schemas/Suite' } } } } }
+  /suites/{id}:
+    get:
+      summary: A suite with its items
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK } }
+  /suites/{id}/items:
+    put:
+      summary: Replace the items (run)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { items: { type: array, items: { $ref: '#/components/schemas/SuiteItem' } } } } } } }
+      responses: { '200': { description: OK } }
+  /suites/{id}/run:
+    post:
+      summary: Queue one run per item (run)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      requestBody: { content: { application/json: { schema: { type: object, properties: { branch: { type: string }, commit_sha: { type: string }, retry_of: { type: integer } } } } } }
+      responses: { '200': { description: Suite run, content: { application/json: { schema: { $ref: '#/components/schemas/SuiteRun' } } } } }
+  /projects/{id}/suite-runs:
+    get:
+      summary: Suite runs of a project
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }, { name: limit, in: query, schema: { type: integer, default: 50 } }]
+      responses: { '200': { description: OK } }
+  /suite-runs/{id}:
+    get:
+      summary: A suite run with its runs
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/SuiteRun' } } } } }
+  /suite-runs/{id}/abort:
+    post:
+      summary: Abort queued and running runs of a suite run (run)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK } }
+  /runs:
+    get:
+      summary: List runs, newest first
+      parameters:
+        - { name: project_id, in: query, schema: { type: integer } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+      responses: { '200': { description: OK } }
+    post:
+      summary: Create a run (run)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project_id: { type: integer }
+                project_code: { type: string }
+                script_id: { type: integer }
+                code: { type: string, description: Inline Jython for an ad-hoc run; exclusive with script_id. }
+                target_id: { type: integer }
+                params: { type: object }
+                timeout_ms: { type: integer }
+                name: { type: string }
+      responses:
+        '200': { description: Queued, content: { application/json: { schema: { $ref: '#/components/schemas/Run' } } } }
+        '400': { description: Missing field, content: { application/json: { example: { error: "give either script_id or code" } } } }
+  /runs/{id}:
+    get:
+      summary: A run with its steps
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { $ref: '#/components/schemas/Run' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /runs/{id}/log:
+    get:
+      summary: Log lines after a sequence number, long-poll with wait
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+        - { name: after, in: query, schema: { type: integer, default: 0 } }
+        - { name: wait, in: query, schema: { type: integer, default: 0, maximum: 60 } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  run_id: { type: integer }
+                  status: { type: string }
+                  finished: { type: boolean }
+                  next: { type: integer, description: Pass as after on the next call. }
+                  lines: { type: array, items: { $ref: '#/components/schemas/LogLine' } }
+  /runs/{id}/log/stream:
+    get:
+      summary: Plain-text log streamed until the run ends
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: text/plain, chunked } }
+  /runs/{id}/steps:
+    get:
+      summary: Steps declared by the script
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Step' } } } } } }
+  /runs/{id}/artifacts:
+    get:
+      summary: Files of a run
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Artifact' } } } } } }
+  /runs/{id}/abort:
+    post:
+      summary: Remove from the queue or interrupt the running script (run)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses:
+        '200': { description: OK, content: { application/json: { example: { run_id: 3, outcome: "abort requested" } } } }
+        '409': { description: Run already finished }
+  /runs/{id}/live:
+    get:
+      summary: MJPEG live view of a recorded run (experimental)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }, { name: key, in: query, schema: { type: string } }]
+      responses: { '200': { description: multipart/x-mixed-replace }, '404': { description: Nothing recording } }
+  /artifacts/{id}:
+    get:
+      summary: Download an artifact
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: The file, with its content type }, '410': { description: File gone } }
+  /keys:
+    get: { summary: List keys (admin), responses: { '200': { description: OK } } }
+    post:
+      summary: Create a key (admin); the clear key is returned once
+      requestBody: { required: true, content: { application/json: { schema: { type: object, required: [name], properties: { name: { type: string }, scopes: { type: string, default: read } } } } } }
+      responses: { '200': { description: Created, content: { application/json: { example: { id: 2, name: ci-reader, scopes: read, key: orx_…, note: "shown once, store it now" } } } } }
+  /keys/{id}:
+    delete:
+      summary: Revoke a key (admin)
+      parameters: [{ name: id, in: path, required: true, schema: { type: integer } }]
+      responses: { '200': { description: OK } }
+  /audit:
+    get:
+      summary: Action journal, newest first (admin)
+      parameters: [{ name: limit, in: query, schema: { type: integer, default: 100 } }]
+      responses: { '200': { description: OK } }
