@@ -5,18 +5,28 @@ targets, scripts, suites, runs, log lines, steps, artifacts, keys, audit. The Oc
 modified: the service loads it once and hands it Jython scripts. After the first run, a `print`
 script executes in 0.7 s instead of 15.
 
-The repository also holds the mainframe target: TK5 (MVS 3.8j under Hercules) with KICKS 1.5.0,
-pulled as a public image, see `lab/`.
+The runner drives any VNC target: a mainframe 3270 session, a point-of-sale, a remote Windows or
+Linux desktop. Nothing is installed on the target. A demo target, TK5 (MVS 3.8j under Hercules)
+with KICKS 1.5.0, is available under a compose profile for those who have none at hand.
+
+Full API reference with real responses: `docs/API.md`; OpenAPI: `docs/openapi.yaml`.
 
 ## Start
 
 ```
 docker compose build oculix-runner
-RUNNER_BOOTSTRAP_KEY=orx_my_key docker compose up -d oculix-runner target-mainframe-kicks
+RUNNER_BOOTSTRAP_KEY=orx_my_key docker compose up -d
 curl http://localhost:8765/health
 ```
 
-The mainframe takes about a minute to IPL; noVNC shows it at http://localhost:6081/vnc.html.
+Only the runner starts. For the demo mainframe as well:
+
+```
+docker compose --profile lab up -d
+```
+
+The image is pulled from GHCR on first use; the mainframe takes about a minute to IPL and noVNC
+shows it at http://localhost:6081/vnc.html.
 
 Without `RUNNER_BOOTSTRAP_KEY`, an admin key is generated on first start and printed once in
 `docker compose logs oculix-runner`. Only its hash is stored.
@@ -25,6 +35,8 @@ The engine takes 15 to 20 s to be ready (`"engine":"ready"` in `/health`). Runs 
 that wait in the queue.
 
 ## First run
+
+Replace `host` with your own VNC target; `target-mainframe-kicks` is the demo mainframe.
 
 ```
 K='X-Api-Key: orx_my_key'
