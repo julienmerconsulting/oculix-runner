@@ -1,31 +1,32 @@
-# KICKS 1.5.0 sur TK5
+# KICKS 1.5.0 on TK5
 
-Démarrer (image publique, KICKS déjà installé) :
+Start (public image, KICKS already installed):
 
 ```
 docker pull ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
 docker compose up -d target-mainframe-kicks
 ```
 
-Arrêter `target-mainframe` avant : 1 Go et 1 CPU chacun. Ports hôte : 3271 (TN3270), 5901 (VNC),
-6081 (noVNC), 8039 (console Hercules). Compte TSO : HERC01 / CUL8TR.
+Stop `target-mainframe` first: 1 GB and 1 CPU each. Host ports: 3271 (TN3270), 5901 (VNC),
+6081 (noVNC), 8039 (Hercules console). TSO account: HERC01 / CUL8TR.
 
-KICKS démarre tout seul au logon de HERC01 (`HERC01.CMDPROC(MYLOGON)` lance la CLIST `KICKS`).
-Ensuite : Ctrl+C pour CLEAR, `BTC0` pour le menu TAC, `KSSF` pour sortir vers ISPF, `LOGOFF` à
-la fin. Pour retrouver le logon classique : supprimer le membre `MYLOGON`.
+KICKS starts by itself at HERC01's logon (`HERC01.CMDPROC(MYLOGON)` runs the `KICKS` CLIST).
+Then: Ctrl+C for CLEAR, `BTC0` for the TAC menu, `KSSF` to leave for ISPF, `LOGOFF` when done.
+To get the plain logon back: delete the `MYLOGON` member.
 
-Installer soi-même sur un TK5 nu : `Guide_installation_KICKS_1.5.0_TK5_OculiX.pdf`, annexe A.
-La seule édition à faire dans la distribution : `VOLUMES(PUB002)` → `VOLUMES(WORK01)` dans les
-jobs `LOADMUR`, `LOADTAC`, `LOADSDB` (`KICKS.V1R5M0.INSTLIB`) et `LODINTRA`, `LODTEMP`
-(`KICKSSYS.V1R5M0.INSTLIB`), parenthèse fermante comprise. Les objets KICKS ne sont pas dans ce
-dépôt : sa licence n'autorise que la redistribution du paquet complet, ce que fait l'image.
+Install it yourself on a bare TK5: `Guide_installation_KICKS_1.5.0_TK5_OculiX.pdf`, appendix A.
+The guide is in French; any AI translates it in a minute. The only edit to make in the
+distribution: `VOLUMES(PUB002)` → `VOLUMES(WORK01)` in jobs `LOADMUR`, `LOADTAC`, `LOADSDB`
+(`KICKS.V1R5M0.INSTLIB`) and `LODINTRA`, `LODTEMP` (`KICKSSYS.V1R5M0.INSTLIB`), closing
+parenthesis included. KICKS objects are not in this repository: its license only allows
+redistributing the complete package, which is what the image does.
 
-Sauvegarder après une modification dans MVS (les DASD sont dans le conteneur, pas dans un volume) :
+Save after a change inside MVS (the DASD live in the container, not in a volume):
 
 ```
 docker commit target-mainframe-kicks ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
 docker push ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
 ```
 
-Ne jamais faire `docker compose down`, `up --build` ni `--force-recreate` sur ce service sans avoir
-poussé le commit avant.
+Never run `docker compose down`, `up --build` or `--force-recreate` on this service without having
+pushed the commit first.
