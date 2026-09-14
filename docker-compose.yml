@@ -1,12 +1,12 @@
 # =============================================================================
 #  OculiX Mainframe Lab
 #
-#  One mainframe target, TK5 (MVS 3.8j under Hercules) with KICKS 1.5.0
-#  installed, pulled from GHCR: host ports 3271 / 5901 / 6081 / 8039.
-#  A bare TK5 without KICKS is the same machine minus one program; it is not
-#  needed here.
+#  The OculiX runner: HTTP API + SQLite on a warm OculiX JVM, port 8765.
+#  It drives any VNC target you register through the API.
 #
-#  And the OculiX runner: HTTP API + SQLite on a warm OculiX JVM, port 8765.
+#  Optional demo target under the "lab" profile: TK5 (MVS 3.8j under Hercules)
+#  with KICKS 1.5.0 installed, pulled from GHCR on demand, host ports
+#  3271 / 5901 / 6081 / 8039.
 # =============================================================================
 
 services:
@@ -16,8 +16,10 @@ services:
   # ===========================================================================
 
   target-mainframe-kicks:
+    # Demo target, only with: docker compose --profile lab up -d
     # TK5 + KICKS 1.5.0 already installed (see lab/KICKS.md). To rebuild a bare
     # TK5 and redo the installation yourself, follow the guide in lab/.
+    profiles: [lab]
     image: ghcr.io/julienmerconsulting/target-mainframe-kicks:1.5.0-installed
     container_name: target-mainframe-kicks
     hostname: target-mainframe-kicks
