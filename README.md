@@ -1,6 +1,6 @@
 # oculix-runner
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: PolyForm Strict 1.0.0](https://img.shields.io/badge/license-PolyForm%20Strict%201.0.0-red.svg)](LICENSE)
 [![Java 17](https://img.shields.io/badge/Java-17-orange.svg)](service/pom.xml)
 [![OculiX 4.0.0](https://img.shields.io/badge/OculiX-4.0.0-6f42c1.svg)](https://github.com/oculix-org/Oculix)
 [![Demo target on GHCR](https://img.shields.io/badge/GHCR-target--mainframe--kicks-2088ff.svg)](https://github.com/julienmerconsulting/oculix-runner/pkgs/container/target-mainframe-kicks)
@@ -230,4 +230,6 @@ the author's working document and stays as written. Any AI translates it in a mi
   the load jobs) and the added `MYLOGON` are in source form, next to the originals. No KICKS
   object is stored in this repository.
 
-This repository itself is under the [MIT license](LICENSE).
+This repository itself is under the [PolyForm Strict License 1.0.0](LICENSE): noncommercial use
+only, no distribution, no changes or derived works. Commercial use, including inside a company,
+needs a written agreement with the author.
